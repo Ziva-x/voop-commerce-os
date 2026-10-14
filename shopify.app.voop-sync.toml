@@ -1,0 +1,18 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "9e75868a20c3b7712800a03fbb4e89e2"
+name = "voop-sync-2"
+application_url = "https://voop-webapp.fly.dev"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+
+[webhooks]
+api_version = "2024-07"
+
+[access_scopes]
+scopes = "read_customers,read_fulfillments,read_inventory,read_locations,read_orders,read_products"
+
+[auth]
+redirect_urls = [ "https://voop-webapp.fly.dev/api/shopify/auth/callback" ]

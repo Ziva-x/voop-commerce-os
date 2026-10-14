@@ -1,0 +1,6 @@
+# A web component that serves both frontend and backend
+roles = ["frontend", "backend"]
+
+[commands]
+dev = "npm run dev"
+build = "npm run build"

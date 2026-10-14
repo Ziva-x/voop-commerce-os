@@ -1,0 +1,10 @@
+User-agent: *
+Disallow: /app/
+Disallow: /api/
+Disallow: /login
+Disallow: /billing
+Disallow: /settings
+Disallow: /register
+Disallow: /onboarding
+Disallow: /subscribe
+Disallow: /embedded-logout

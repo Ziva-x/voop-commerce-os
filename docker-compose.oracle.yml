@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: voop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: voop_webapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-VoopProdSecure2026_Postgres}
+    volumes:
+      - voop_db_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d voop_webapp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voop-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: "0.0.0.0"
+      DATABASE_URL: "postgres://postgres:${DB_PASSWORD:-VoopProdSecure2026_Postgres}@db:5432/voop_webapp"
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-super_secret_voop_key_2026}
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      SHOPIFY_CLIENT_ID: ${SHOPIFY_CLIENT_ID:-9e75868a20c3b7712800a03fbb4e89e2}
+      SHOPIFY_CLIENT_SECRET: ${SHOPIFY_CLIENT_SECRET}
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  caddy:
+    image: caddy:alpine
+    container_name: voop-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - voop_caddy_data:/data
+      - voop_caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  voop_db_data:
+  voop_caddy_data:
+  voop_caddy_config:
