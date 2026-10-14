@@ -22,9 +22,17 @@ export async function GET() {
       const { authOptions } = await import("@/lib/auth");
       diag.authOptionsLoaded = true;
       diag.hasSecretInAuthOptions = !!authOptions.secret;
+
+      const NextAuth = (await import("next-auth")).default;
+      const req = new Request("https://voop-commerce-os.vercel.app/api/auth/csrf");
+      const nextAuthHandler = NextAuth(authOptions);
+      const authRes = await nextAuthHandler(req as any, { params: { nextauth: ["csrf"] } });
+      diag.nextAuthCsrfStatus = authRes.status;
+      diag.nextAuthCsrfBody = await authRes.text();
     } catch(authErr: any) {
       diag.authOptionsLoaded = false;
       diag.authOptionsError = authErr.message;
+      diag.authOptionsStack = authErr.stack;
     }
 
     return NextResponse.json({ ok: true, diag });
