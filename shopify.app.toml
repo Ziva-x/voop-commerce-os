@@ -2,7 +2,7 @@
 
 client_id = "9e75868a20c3b7712800a03fbb4e89e2"
 name = "Voop"
-application_url = "https://voop-webapp.fly.dev"
+application_url = "https://voop-commerce-os.vercel.app"
 embedded = true
 handle = "voop-shopify-sync"
 
@@ -51,7 +51,10 @@ api_version = "2026-10"
 scopes = "read_products,write_products,read_orders,write_orders,read_fulfillments,read_customers,read_inventory,write_metaobject_definitions,write_metaobjects"
 
 [auth]
-redirect_urls = [ "https://voop-webapp.fly.dev/api/shopify/auth/callback" ]
+redirect_urls = [
+  "https://voop-commerce-os.vercel.app/api/shopify/auth/callback",
+  "https://voop-webapp.fly.dev/api/shopify/auth/callback"
+]
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"

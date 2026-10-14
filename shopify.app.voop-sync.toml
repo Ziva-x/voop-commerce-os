@@ -2,7 +2,7 @@
 
 client_id = "9e75868a20c3b7712800a03fbb4e89e2"
 name = "voop-sync-2"
-application_url = "https://voop-webapp.fly.dev"
+application_url = "https://voop-commerce-os.vercel.app"
 embedded = true
 
 [build]
@@ -15,4 +15,8 @@ api_version = "2024-07"
 scopes = "read_customers,read_fulfillments,read_inventory,read_locations,read_orders,read_products"
 
 [auth]
-redirect_urls = [ "https://voop-webapp.fly.dev/api/shopify/auth/callback" ]
+redirect_urls = [
+  "https://voop-commerce-os.vercel.app/api/shopify/auth/callback",
+  "https://voop-webapp.fly.dev/api/shopify/auth/callback"
+]
+
