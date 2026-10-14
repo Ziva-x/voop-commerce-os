@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { extractCleanShopDomain } from "@/lib/utils";
 import { ensureStorePermanentIdentities } from "@/lib/tenant-ids";
 
