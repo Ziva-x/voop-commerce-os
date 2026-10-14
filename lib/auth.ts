@@ -66,7 +66,6 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: "/login",
     newUser: "/register",
-    error: "/login",
   },
   providers: [
     CredentialsProvider({

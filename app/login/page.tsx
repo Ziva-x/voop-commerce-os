@@ -16,6 +16,9 @@ const AUTH_ERRORS: Record<string, string> = {
 };
 
 function friendlyError(code: string): string {
+  if (!code || code === "undefined" || code === "null") {
+    return "Sign-in failed. Please check your credentials and try again.";
+  }
   return AUTH_ERRORS[code] ?? code ?? "Sign-in failed. Please try again.";
 }
 
@@ -33,10 +36,14 @@ function LoginForm() {
     setLoading(true);
     setError("");
 
+    const rawCallback = searchParams.get("callbackUrl") || "/";
+    const cleanCallbackUrl = (rawCallback.startsWith("/login") || rawCallback.includes("error=")) ? "/" : rawCallback;
+
     try {
       const res = await signIn("credentials", {
         email: email.trim(),
         password,
+        callbackUrl: cleanCallbackUrl,
         redirect: false,
       });
 
@@ -45,7 +52,7 @@ function LoginForm() {
         return;
       }
 
-      if (res.error) {
+      if (res.error && res.error !== "undefined") {
         setError(friendlyError(res.error));
         return;
       }
@@ -115,8 +122,7 @@ function LoginForm() {
           }
         } catch (_storeErr) {}
 
-        const callbackUrl = searchParams.get("callbackUrl") || "/";
-        router.push(callbackUrl);
+        router.push(cleanCallbackUrl);
         router.refresh();
         return;
       }
