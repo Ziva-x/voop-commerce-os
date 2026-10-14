@@ -17,6 +17,16 @@ export async function GET() {
     const storeCount = await prisma.shopifyStore.count();
     diag.prismaSuccess = true;
     diag.storeCount = storeCount;
+
+    try {
+      const { authOptions } = await import("@/lib/auth");
+      diag.authOptionsLoaded = true;
+      diag.hasSecretInAuthOptions = !!authOptions.secret;
+    } catch(authErr: any) {
+      diag.authOptionsLoaded = false;
+      diag.authOptionsError = authErr.message;
+    }
+
     return NextResponse.json({ ok: true, diag });
   } catch (error: any) {
     diag.prismaSuccess = false;
