@@ -15,7 +15,7 @@ export function getCleanDatabaseUrl(rawUrl?: string): string | undefined {
     url = url.replace("pooler.supabase.com:5432", "pooler.supabase.com:6543");
   }
 
-  // When connecting via port 6543, ensure pgbouncer=true and connection_limit=1 for Prisma serverless execution
+  // When connecting via port 6543, ensure pgbouncer=true, connection_limit=5, and pool_timeout=30
   if (url.includes(":6543")) {
     try {
       const parsed = new URL(url);
@@ -23,12 +23,15 @@ export function getCleanDatabaseUrl(rawUrl?: string): string | undefined {
         parsed.searchParams.set("pgbouncer", "true");
       }
       if (!parsed.searchParams.has("connection_limit")) {
-        parsed.searchParams.set("connection_limit", "1");
+        parsed.searchParams.set("connection_limit", "5");
+      }
+      if (!parsed.searchParams.has("pool_timeout")) {
+        parsed.searchParams.set("pool_timeout", "30");
       }
       url = parsed.toString();
     } catch {
       if (!url.includes("pgbouncer=true")) {
-        url += (url.includes("?") ? "&" : "?") + "pgbouncer=true&connection_limit=1";
+        url += (url.includes("?") ? "&" : "?") + "pgbouncer=true&connection_limit=5&pool_timeout=30";
       }
     }
   }

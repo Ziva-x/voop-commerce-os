@@ -38,6 +38,16 @@ async function testPrisma() {
   const ledgerCount = await prisma.inventoryLedger.count();
   console.log(`✓ Total Inventory Ledger: ${ledgerCount}`);
 
+  if (stores.length > 0) {
+    console.log('Testing write/update on store...');
+    const t0 = Date.now();
+    await prisma.shopifyStore.update({
+      where: { id: stores[0].id },
+      data: { updatedAt: new Date() }
+    });
+    console.log(`✓ Store update succeeded in ${Date.now() - t0}ms!`);
+  }
+
   await prisma.$disconnect();
   console.log('\n🎉 Prisma successfully verified against Supabase!');
 }

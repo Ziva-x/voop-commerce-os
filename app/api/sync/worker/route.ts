@@ -442,12 +442,11 @@ async function runOrdersSync(
     while (true) {
       const params: Record<string, string> = {
         limit: String(BATCH_SIZE),
-        status: "any",
       };
       if (pageInfo) {
         params.page_info = pageInfo;
-      } else if (!isFirstBatch) {
-        break; // No more pages
+      } else {
+        params.status = "any";
       }
 
       const { data: orders, nextPageInfo } = await shopifyRestFetch(
