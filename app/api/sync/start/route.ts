@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authorizeStoreAccess } from "@/lib/auth-helpers";
+import { getAppBaseUrl } from "@/lib/url-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -75,16 +76,21 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // ─── Fire worker (non-blocking) ─────────────────────────────────────────
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-    // Fire and forget — do NOT await
-    fetch(`${baseUrl}/api/sync/worker`, {
+    // ─── Fire worker (non-blocking with socket handshake grace) ────────────
+    const baseUrl = getAppBaseUrl(request);
+    const workerPromise = fetch(`${baseUrl}/api/sync/worker`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: job.id }),
     }).catch((err) => {
       console.error("[SyncStart] Failed to fire worker:", err.message);
     });
+
+    // Allow 300ms for HTTP handshake to register before serverless response freeze
+    await Promise.race([
+      workerPromise,
+      new Promise((resolve) => setTimeout(resolve, 300)),
+    ]);
 
     return NextResponse.json({
       success: true,

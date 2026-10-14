@@ -9,10 +9,11 @@ import {
 import { InventoryService } from "@/lib/services/InventoryService";
 import { ShipmentSyncService } from "@/lib/services/ShipmentSyncService";
 
-// Max runtime — Next.js default is 60s on serverless; Fly.io has no limit
-export const maxDuration = 300; // 5 minutes per batch cycle
+// Max runtime — Next.js default is 60s on serverless
+export const maxDuration = 60;
 
-const BATCH_SIZE = 250;
+const BATCH_SIZE = 50;
+const TIME_BUDGET_MS = 8000; // 8 seconds per serverless invocation to avoid 504 timeouts
 const MAX_RETRIES = 3;
 const RETRY_BACKOFF_MS = [1000, 3000, 8000];
 
@@ -385,7 +386,11 @@ async function upsertProduct(storeId: string, product: any) {
 }
 
 /** Run the orders sync loop for a job */
-async function runOrdersSync(job: any, store: any) {
+async function runOrdersSync(
+  job: any,
+  store: any
+): Promise<{ completed: boolean; moreBatches: boolean; currentBatch: number; processedCount: number }> {
+  const cycleStartTime = Date.now();
   let pageInfo: string | null = job.pageInfo || null; // Resume from checkpoint if set
   let batchNum = job.currentBatch || 0;
   let processedCount = job.processedCount || 0;
@@ -415,17 +420,25 @@ async function runOrdersSync(job: any, store: any) {
     }
   }
 
-  // Create / update SyncLog for history
-  const syncLog = await prisma.syncLog.create({
-    data: {
-      storeId: store.id,
-      type: "ORDERS",
-      status: "IN_PROGRESS",
-      startedAt: new Date(),
-    },
+  // Create or reuse SyncLog for history
+  let syncLog = await prisma.syncLog.findFirst({
+    where: { storeId: store.id, type: "ORDERS", status: "IN_PROGRESS" },
+    orderBy: { startedAt: "desc" },
   });
+  if (!syncLog) {
+    syncLog = await prisma.syncLog.create({
+      data: {
+        storeId: store.id,
+        type: "ORDERS",
+        status: "IN_PROGRESS",
+        startedAt: new Date(),
+      },
+    });
+  }
 
   try {
+    let hasMorePages = false;
+
     while (true) {
       const params: Record<string, string> = {
         limit: String(BATCH_SIZE),
@@ -471,7 +484,22 @@ async function runOrdersSync(job: any, store: any) {
         pageInfo,
       });
 
-      if (!nextPageInfo) break;
+      if (!nextPageInfo) {
+        hasMorePages = false;
+        break;
+      }
+
+      // Check time budget (8s) so Vercel serverless functions never 504 timeout
+      if (Date.now() - cycleStartTime > TIME_BUDGET_MS) {
+        console.log(`[SyncWorker] Time budget reached (${Date.now() - cycleStartTime}ms). Checkpointing batch ${batchNum} (processed: ${processedCount}).`);
+        hasMorePages = true;
+        break;
+      }
+    }
+
+    if (hasMorePages) {
+      // Chunk completed within budget, more batches remaining
+      return { completed: false, moreBatches: true, currentBatch: batchNum, processedCount };
     }
 
     // Determine final job status
@@ -511,6 +539,8 @@ async function runOrdersSync(job: any, store: any) {
         errorDetails: orderErrors.length > 0 ? orderErrors.join("\n") : null,
       },
     });
+
+    return { completed: true, moreBatches: false, currentBatch: batchNum, processedCount };
   } catch (err: any) {
     await updateJobProgress(job.id, { status: "FAILED", errorMessage: err.message });
     await prisma.syncLog.update({
@@ -527,7 +557,11 @@ async function runOrdersSync(job: any, store: any) {
 }
 
 /** Run the products sync loop for a job */
-async function runProductsSync(job: any, store: any) {
+async function runProductsSync(
+  job: any,
+  store: any
+): Promise<{ completed: boolean; moreBatches: boolean; currentBatch: number; processedCount: number }> {
+  const cycleStartTime = Date.now();
   let pageInfo: string | null = job.pageInfo || null;
   let batchNum = job.currentBatch || 0;
   let processedCount = job.processedCount || 0;
@@ -557,16 +591,24 @@ async function runProductsSync(job: any, store: any) {
     }
   }
 
-  const syncLog = await prisma.syncLog.create({
-    data: {
-      storeId: store.id,
-      type: "PRODUCTS",
-      status: "IN_PROGRESS",
-      startedAt: new Date(),
-    },
+  let syncLog = await prisma.syncLog.findFirst({
+    where: { storeId: store.id, type: "PRODUCTS", status: "IN_PROGRESS" },
+    orderBy: { startedAt: "desc" },
   });
+  if (!syncLog) {
+    syncLog = await prisma.syncLog.create({
+      data: {
+        storeId: store.id,
+        type: "PRODUCTS",
+        status: "IN_PROGRESS",
+        startedAt: new Date(),
+      },
+    });
+  }
 
   try {
+    let hasMorePages = false;
+
     while (true) {
       const params: Record<string, string> = { limit: String(BATCH_SIZE) };
       if (pageInfo) {
@@ -607,7 +649,21 @@ async function runProductsSync(job: any, store: any) {
         pageInfo,
       });
 
-      if (!nextPageInfo) break;
+      if (!nextPageInfo) {
+        hasMorePages = false;
+        break;
+      }
+
+      // Check time budget (8s) so Vercel serverless functions never 504 timeout
+      if (Date.now() - cycleStartTime > TIME_BUDGET_MS) {
+        console.log(`[SyncWorker] Product time budget reached (${Date.now() - cycleStartTime}ms). Checkpointing batch ${batchNum}.`);
+        hasMorePages = true;
+        break;
+      }
+    }
+
+    if (hasMorePages) {
+      return { completed: false, moreBatches: true, currentBatch: batchNum, processedCount };
     }
 
     const isFullSuccess = failedCount === 0;
@@ -653,6 +709,8 @@ async function runProductsSync(job: any, store: any) {
         errorDetails: productErrors.length > 0 ? productErrors.join("\n") : null,
       },
     });
+
+    return { completed: true, moreBatches: false, currentBatch: batchNum, processedCount };
   } catch (err: any) {
     await updateJobProgress(job.id, { status: "FAILED", errorMessage: err.message });
     await prisma.syncLog.update({
@@ -672,9 +730,7 @@ async function runProductsSync(job: any, store: any) {
  * POST /api/sync/worker
  *
  * Internal background batch processor. Called by /api/sync/start.
- * Should NOT be called directly by clients.
- *
- * Supports auto-resume: if job.pageInfo is set, resumes from that Shopify cursor.
+ * Supports auto-resume and time-budgeted chunk execution for serverless.
  */
 export async function POST(request: NextRequest) {
   let job: any = null;
@@ -694,7 +750,7 @@ export async function POST(request: NextRequest) {
 
     // Safety: only process QUEUED or IN_PROGRESS (for auto-resume)
     if (job.status === "COMPLETED" || job.status === "FAILED") {
-      return NextResponse.json({ skipped: true, reason: `Job already ${job.status}` });
+      return NextResponse.json({ skipped: true, reason: `Job already ${job.status}`, status: job.status });
     }
 
     const store = await prisma.shopifyStore.findUnique({ where: { id: job.storeId } });
@@ -710,23 +766,53 @@ export async function POST(request: NextRequest) {
     // Mark as IN_PROGRESS
     await updateJobProgress(jobId, { status: "IN_PROGRESS", startedAt: job.startedAt ?? new Date() });
 
+    let chunkResult: { completed: boolean; moreBatches: boolean; currentBatch?: number; processedCount?: number } = {
+      completed: true,
+      moreBatches: false,
+    };
+
     if (job.type === "products") {
-      await runProductsSync(job, store);
+      chunkResult = await runProductsSync(job, store);
     } else if (job.type === "orders") {
-      await runOrdersSync(job, store);
+      chunkResult = await runOrdersSync(job, store);
     } else if (job.type === "all") {
       // For "all": run products first, then orders
-      await runProductsSync({ ...job, processedCount: 0, currentBatch: 0, pageInfo: null }, store);
-      await runOrdersSync({ ...job, processedCount: 0, currentBatch: 0, pageInfo: null }, store);
-      // Mark the parent "all" job complete
-      await updateJobProgress(job.id, {
-        status: "COMPLETED",
-        completedAt: new Date(),
-      });
-      await prisma.shopifyStore.update({
-        where: { id: store.id },
-        data: { lastFullSyncAt: new Date() },
-      });
+      const meta = typeof job.metadata === "object" && job.metadata !== null ? (job.metadata as any) : {};
+      if (!meta.productsCompleted) {
+        const prodResult = await runProductsSync(job, store);
+        if (prodResult.moreBatches) {
+          return NextResponse.json({
+            success: true,
+            jobId,
+            status: "IN_PROGRESS",
+            moreBatches: true,
+            stage: "products",
+            currentBatch: prodResult.currentBatch,
+            processedCount: prodResult.processedCount,
+          });
+        }
+        await prisma.syncJob.update({
+          where: { id: job.id },
+          data: {
+            metadata: { ...meta, productsCompleted: true },
+            pageInfo: null,
+            currentBatch: 0,
+          },
+        });
+        job.pageInfo = null;
+        job.currentBatch = 0;
+      }
+      chunkResult = await runOrdersSync(job, store);
+      if (chunkResult.completed) {
+        await updateJobProgress(job.id, {
+          status: "COMPLETED",
+          completedAt: new Date(),
+        });
+        await prisma.shopifyStore.update({
+          where: { id: store.id },
+          data: { lastFullSyncAt: new Date() },
+        });
+      }
     } else if (job.type === "single_order") {
       const orderId = (job.metadata as any)?.orderId;
       if (!orderId) {
@@ -754,7 +840,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, jobId });
+    return NextResponse.json({
+      success: true,
+      jobId,
+      status: chunkResult.completed ? "COMPLETED" : "IN_PROGRESS",
+      moreBatches: chunkResult.moreBatches ?? false,
+      currentBatch: chunkResult.currentBatch,
+      processedCount: chunkResult.processedCount,
+    });
   } catch (error: any) {
     console.error("[SyncWorker] Unhandled error:", error.message);
     if (job?.id) {

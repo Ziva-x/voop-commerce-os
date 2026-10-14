@@ -5,7 +5,7 @@ const password = 'V9+x#VW6_WWqKiz';
 const encodedPassword = encodeURIComponent(password);
 const host = 'aws-0-ap-south-1.pooler.supabase.com';
 
-const dbUrl = `postgresql://postgres.${projectRef}:${encodedPassword}@${host}:5432/postgres?sslmode=require`;
+const dbUrl = `postgresql://postgres.${projectRef}:${encodedPassword}@${host}:6543/postgres?pgbouncer=true&connection_limit=1`;
 
 const prisma = new PrismaClient({
   datasources: { db: { url: dbUrl } }

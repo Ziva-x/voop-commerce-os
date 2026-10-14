@@ -72,11 +72,30 @@ export function SyncIndicator() {
   const completedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStatusRef = useRef<JobStatus | null>(null);
+  const triggeredJobsRef = useRef<Set<string>>(new Set());
 
   const clearPoll = () => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = null;
   };
+
+  const runWorkerChunk = useCallback(async (jobId: string) => {
+    try {
+      const res = await appFetch("/api/sync/worker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.moreBatches) {
+        // Continue next batch chunk after 400ms pause
+        setTimeout(() => runWorkerChunk(jobId), 400);
+      }
+    } catch {
+      // Polling will recover if connection drops
+    }
+  }, []);
 
   const poll = useCallback(async () => {
     try {
@@ -89,7 +108,14 @@ export function SyncIndicator() {
         setJob(activeJob);
         setDismissed(false);
         prevStatusRef.current = activeJob.status;
+
+        // Auto-kick worker chunks if job is QUEUED or IN_PROGRESS and not yet running in this tab
+        if ((activeJob.status === "QUEUED" || activeJob.status === "IN_PROGRESS") && !triggeredJobsRef.current.has(activeJob.id)) {
+          triggeredJobsRef.current.add(activeJob.id);
+          runWorkerChunk(activeJob.id);
+        }
       } else {
+        triggeredJobsRef.current.clear();
         // No active job
         const prev = prevStatusRef.current;
         if (prev === "IN_PROGRESS" || prev === "QUEUED") {

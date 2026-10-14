@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeStoreAccess } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
+import { getAppBaseUrl } from "@/lib/url-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     const type = body.type || "all"; // "products" | "orders" | "all"
 
     // Delegate to the background job system with full tab context forwarding
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    const baseUrl = getAppBaseUrl(request);
     const forwardHeaders: Record<string, string> = {
       "Content-Type": "application/json",
       "Cache-Control": "no-cache",

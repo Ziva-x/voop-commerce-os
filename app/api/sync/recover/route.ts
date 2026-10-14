@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAppBaseUrl } from "@/lib/url-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +21,22 @@ export async function POST(request: NextRequest) {
   try {
     const staleThreshold = new Date(Date.now() - STALE_THRESHOLD_MINUTES * 60 * 1000);
 
-    // Find all stale IN_PROGRESS jobs
+    // Find all stale IN_PROGRESS jobs or abandoned QUEUED jobs
+    const staleQueuedThreshold = new Date(Date.now() - 2 * 60 * 1000);
     const staleJobs = await prisma.syncJob.findMany({
       where: {
-        status: "IN_PROGRESS",
         OR: [
-          { heartbeat: null },
-          { heartbeat: { lt: staleThreshold } },
+          {
+            status: "IN_PROGRESS",
+            OR: [
+              { heartbeat: null },
+              { heartbeat: { lt: staleThreshold } },
+            ],
+          },
+          {
+            status: "QUEUED",
+            createdAt: { lt: staleQueuedThreshold },
+          },
         ],
       },
     });
@@ -56,10 +66,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Auto-resume: re-fire the worker from the last committed pageInfo cursor
-        const baseUrl =
-          process.env.NEXTAUTH_URL ||
-          process.env.NEXT_PUBLIC_BASE_URL ||
-          "http://localhost:3000";
+        const baseUrl = getAppBaseUrl(request);
 
         fetch(`${baseUrl}/api/sync/worker`, {
           method: "POST",
